@@ -1185,37 +1185,58 @@ const previousQuestion = () => {
 const finishSurvey = async () => {
   isSurveyComplete.value = true;
   const now = new Date();
-  const uniqueId = await getNextId();
+  let uniqueId = `CaenFlash-Error-${Date.now()}`; // Default in case getNextId fails
+  try {
+     uniqueId = await getNextId();
+  } catch (error) {
+     console.error("Error getting next ID:", error);
+     // Potentially alert the user or prevent saving
+     alert(`Erreur lors de la génération de l'ID: ${error.message}`);
+     isSurveyComplete.value = false; // Revert completion state
+     return;
+  }
 
-  // Determine if it's a passenger or non-passenger survey
-  const isPassenger = answers.value["Q1"] === 1;
-  const questionPrefix = isPassenger ? "Q2" : "Q2_nonvoyageur";
+  // Ensure answers['Q1'] exists before proceeding
+  const q1Answer = answers.value['Q1'];
+  if (q1Answer === undefined || q1Answer === null) {
+      console.error("Q1 answer is missing when trying to finish survey.");
+      alert("Une erreur est survenue. Impossible de sauvegarder le questionnaire sans réponse à Q1.");
+      isSurveyComplete.value = false; // Don't show completion message
+      return; // Stop execution
+  }
 
-  // Create answers object
-  const orderedAnswers = {
+  const isPassenger = q1Answer === 1;
+  const surveyType = isPassenger ? "Voyageur" : "Non-voyageur";
+
+  // Define the object to save clearly, with fallbacks
+  const dataToSave = {
     ID_questionnaire: uniqueId,
-    HEURE_DEBUT: startDate.value,
+    HEURE_DEBUT: startDate.value || "Non défini", // Fallback
     DATE: now.toLocaleDateString("fr-FR").replace(/\//g, "-"),
     JOUR: now.toLocaleDateString("fr-FR", { weekday: "long" }),
-    ENQUETEUR: enqueteur.value,
+    ENQUETEUR: enqueteur.value || "Non défini", // Fallback
     HEURE_FIN: now.toLocaleTimeString("fr-FR", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
     }),
-    TYPE_QUESTIONNAIRE: isPassenger ? "Voyageur" : "Non-voyageur",
-    [`${questionPrefix}_COMMUNE`]:
-      answers.value[`${questionPrefix}_COMMUNE`] || "",
-    CODE_INSEE: answers.value["CODE_INSEE"] || "",
+    TYPE_QUESTIONNAIRE: surveyType,
+    Q1: q1Answer
   };
 
-  // Add all answers
-  Object.keys(answers.value).forEach((key) => {
-    orderedAnswers[key] = answers.value[key];
-  });
+  console.log("Attempting to save:", dataToSave); // Log the exact data
 
-  await addDoc(surveyCollectionRef, orderedAnswers);
-  await getDocCount();
+  try {
+    const docRef = await addDoc(surveyCollectionRef, dataToSave); // Get reference to check saved data later if needed
+    console.log("Document saved successfully with ID:", docRef.id); // Log Firestore's assigned ID
+    // Compare Firestore ID with our generated one if needed: console.log("Generated ID vs Firestore ID:", uniqueId, docRef.id);
+    await getDocCount(); // Keep if admin dashboard needs it
+  } catch (error) {
+      console.error("Error saving document to Firestore:", error);
+      alert(`Erreur lors de la sauvegarde du questionnaire: ${error.message}`);
+      // Potentially revert isSurveyComplete?
+      isSurveyComplete.value = false;
+  }
 };
 
 const resetSurvey = () => {

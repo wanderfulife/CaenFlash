@@ -161,42 +161,6 @@ const downloadData = async () => {
       "HEURE_FIN",
       "TYPE_QUESTIONNAIRE",
       "Q1", // Prend train? (1=oui, 2=non)
-      "Q2", // Origine: Caen (1) ou Autre (2)
-      "Q2_COMMUNE", // Origine: Commune (si Q2=1 ou Q2_precision dropdown)
-      "CODE_INSEE", // Origine: INSEE (si Q2=1 ou Q2_precision dropdown)
-      "COMMUNE_LIBRE", // Origine: Commune libre (si Q2_precision free text)
-      // "Q2_precision", // Raw input for Q2_precision - usually not needed if broken down
-      "Q2a", // Rue Caen
-      "Q3", // Mode transport vers gare
-      "Q3_bus",
-      "Q3_bus_precision",
-      "Q3_tram",
-      "Q3_autre",
-      "Q3a", // Parking conducteur
-      "Q3a_precision",
-      "Q3b", // Depose passager
-      "Q3b_precision",
-      "Q3c", // Parking velo/trottinette
-      "Q3c_precision",
-      "Q4", // Temps arrivee avant train
-      "Q5", // Gare destination finale (liste)
-      "Q5_precision", // Gare destination finale (libre)
-      "Q6", // Lieu destination finale (raw input from CommuneSelector)
-      "Q6_COMMUNE", // Lieu destination finale: Commune (si Q6 dropdown)
-      "Q6_CODE_INSEE", // Lieu destination finale: INSEE (si Q6 dropdown)
-      "Q6_COMMUNE_LIBRE", // Lieu destination finale: Commune libre (si Q6 free text)
-      "Q7", // Motif deplacement
-      "Q7_precision",
-      "Q8", // Frequence
-      "Q9", // Aller ou retour?
-      "Q9a", // Quand retour?
-      "Q9b", // Quand aller?
-      "Q9c", // Motif presence si ni aller ni retour
-      "Q9c_precision",
-      "Q10", // CSP
-      "Q10_precision",
-      "Q11", // Age
-      "Q12", // Genre
     ];
 
     const data = querySnapshot.docs.map((doc) => {
