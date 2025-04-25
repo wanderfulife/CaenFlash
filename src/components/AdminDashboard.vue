@@ -26,13 +26,19 @@
           &times;
         </button>
         <h2>Tableau de Bord Admin</h2>
+
+        <!-- Toggle Button -->
+        <button @click="toggleFilter" class="btn-toggle">
+          {{ showOnlyToday ? 'Voir Tout' : 'Voir Aujourd\'hui Seulement' }}
+        </button>
+
         <div class="dashboard-content">
           <div class="dashboard-card total">
-            <h3>Total des Enquêtes</h3>
+            <h3>Total des Enquêtes ({{ showOnlyToday ? 'Aujourd\'hui' : 'Tout' }})</h3>
             <p class="big-number">{{ totalSurveys }}</p>
           </div>
           <div class="dashboard-card">
-            <h3>Enquêtes par Enquêteur</h3>
+            <h3>Enquêtes par Enquêteur ({{ showOnlyToday ? 'Aujourd\'hui' : 'Tout' }})</h3>
             <ul>
               <li v-for="(count, name) in surveysByEnqueteur" :key="name">
                 <span>{{ name }}</span>
@@ -41,7 +47,7 @@
             </ul>
           </div>
           <div class="dashboard-card">
-            <h3>Enquêtes par Type</h3>
+            <h3>Enquêtes par Type ({{ showOnlyToday ? 'Aujourd\'hui' : 'Tout' }})</h3>
             <ul>
               <li v-for="(count, type) in surveysByType" :key="type">
                 <span>{{ type }}</span>
@@ -51,7 +57,7 @@
           </div>
         </div>
         <button @click="downloadData" class="btn-download">
-          Télécharger les Données
+          Télécharger les Données ({{ showOnlyToday ? 'Aujourd\'hui' : 'Tout' }})
         </button>
       </div>
     </div>
@@ -70,6 +76,9 @@ const password = ref("");
 const surveysByEnqueteur = ref({});
 const surveysByType = ref({});
 const totalSurveys = ref(0);
+const displayedSurveys = ref([]);
+const allFetchedSurveys = ref([]);
+const showOnlyToday = ref(true);
 
 const surveyCollectionRef = collection(db, "CaenFlash");
 
@@ -112,6 +121,7 @@ const stationsList = [
 const signIn = () => {
   if (password.value === "Yamina123") {
     showSignInModal.value = false;
+    showOnlyToday.value = true;
     fetchAdminData();
     showAdminDashboard.value = true;
   } else {
@@ -119,93 +129,143 @@ const signIn = () => {
   }
 };
 
-const fetchAdminData = async () => {
+// Helper function to get today's date in DD-MM-YYYY format
+const getTodayDateString = () => {
+  const today = new Date();
+  const day = String(today.getDate()).padStart(2, '0');
+  const month = String(today.getMonth() + 1).padStart(2, '0'); // Months are 0-based
+  const year = today.getFullYear();
+  return `${day}-${month}-${year}`;
+};
+
+const fetchAdminData = async (forceRefetch = false) => {
   try {
-    const querySnapshot = await getDocs(surveyCollectionRef);
-    const surveys = querySnapshot.docs.map((doc) => doc.data());
+    // Fetch all surveys only if needed (first time or forced)
+    if (allFetchedSurveys.value.length === 0 || forceRefetch) {
+        console.log("Fetching all surveys from Firestore...");
+        const querySnapshot = await getDocs(surveyCollectionRef);
+        allFetchedSurveys.value = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })); // Include Firestore ID if needed
+        console.log("Fetched all surveys:", allFetchedSurveys.value.length);
+    }
 
-    totalSurveys.value = surveys.length;
+    let surveysToDisplay = [];
+    if (showOnlyToday.value) {
+      // Filter for today's surveys
+      const todayString = getTodayDateString();
+      console.log("Filtering for date:", todayString);
+      surveysToDisplay = allFetchedSurveys.value.filter(survey => survey.DATE === todayString);
+      console.log("Displaying surveys from today:", surveysToDisplay.length);
+    } else {
+        console.log("Displaying all surveys.");
+        surveysToDisplay = [...allFetchedSurveys.value]; // Use all fetched surveys
+    }
 
-    surveysByEnqueteur.value = surveys.reduce((acc, survey) => {
-      acc[survey.ENQUETEUR] = (acc[survey.ENQUETEUR] || 0) + 1;
+    displayedSurveys.value = surveysToDisplay;
+
+    // Calculate stats based on the displayed surveys
+    totalSurveys.value = displayedSurveys.value.length;
+
+    surveysByEnqueteur.value = displayedSurveys.value.reduce((acc, survey) => {
+      const enqueteurName = survey.ENQUETEUR || "Non défini";
+      acc[enqueteurName] = (acc[enqueteurName] || 0) + 1;
       return acc;
     }, {});
 
-    surveysByType.value = surveys.reduce((acc, survey) => {
-      let type;
+    surveysByType.value = displayedSurveys.value.reduce((acc, survey) => {
+      let type = "Inconnu";
       if (survey.Q1 === 1) {
         type = "Voyageur";
       } else if (survey.Q1 === 2) {
         type = "Non-voyageur";
       } else {
-        type = "Non-voyageur";
+        type = survey.TYPE_QUESTIONNAIRE || "Non-voyageur";
       }
       acc[type] = (acc[type] || 0) + 1;
       return acc;
     }, {});
+
   } catch (error) {
-    console.error("Erreur lors de la récupération des données :", error);
+    console.error("Erreur lors de la récupération/filtrage des données :", error);
+    alert(`Erreur lors de la récupération des données: ${error.message}`);
   }
 };
 
-const downloadData = async () => {
-  try {
-    const querySnapshot = await getDocs(surveyCollectionRef);
+// Function to toggle the filter and refresh data
+const toggleFilter = () => {
+    showOnlyToday.value = !showOnlyToday.value; // Toggle the state
+    fetchAdminData(); // Refresh the dashboard data based on the new state
+};
 
+const downloadData = async () => {
+  // Data to export is based on the currently displayed surveys
+  const dataToExport = displayedSurveys.value;
+
+  if (!dataToExport || dataToExport.length === 0) {
+      const message = showOnlyToday.value ? "Aucune enquête trouvée pour aujourd'hui à exporter." : "Aucune enquête trouvée à exporter.";
+      alert(message);
+      return;
+  }
+
+  try {
+    // Define header order
     const headerOrder = [
-      "ID_questionnaire",
-      "ENQUETEUR",
-      "DATE",
-      "JOUR",
-      "HEURE_DEBUT",
-      "HEURE_FIN",
-      "TYPE_QUESTIONNAIRE",
-      "Q1", // Prend train? (1=oui, 2=non)
+      "ID_questionnaire", "ENQUETEUR", "DATE", "JOUR", "HEURE_DEBUT", "HEURE_FIN",
+      "TYPE_QUESTIONNAIRE", "Q1"
+      // Add other headers if necessary
     ];
 
-    const data = querySnapshot.docs.map((doc) => {
-      const docData = doc.data();
-      // Pre-process data: Set TYPE_QUESTIONNAIRE
-      let type;
-      if (docData.Q1 === 1) {
-        type = "Voyageur";
-      } else if (docData.Q1 === 2) {
-        type = "Non-voyageur";
-      } else {
-        type = "Non-voyageur";
-      }
-      // Add TYPE_QUESTIONNAIRE to docData for easier mapping
-      docData.TYPE_QUESTIONNAIRE = type;
+    // Map the displayed data for export
+    const mappedData = dataToExport.map((docData) => {
+      let type = "Inconnu";
+        if (docData.Q1 === 1) {
+            type = "Voyageur";
+        } else if (docData.Q1 === 2) {
+            type = "Non-voyageur";
+        } else {
+            type = docData.TYPE_QUESTIONNAIRE || "Non-voyageur";
+        }
+        const processedData = { ...docData, TYPE_QUESTIONNAIRE: type };
 
-      // Map data based on header order, using nullish coalescing for defaults
       return headerOrder.reduce((acc, key) => {
-        acc[key] = docData[key] ?? "";
+        acc[key] = processedData[key] ?? "";
         return acc;
       }, {});
     });
 
-    const worksheet = XLSX.utils.json_to_sheet(data, { header: headerOrder });
+    const worksheet = XLSX.utils.json_to_sheet(mappedData, { header: headerOrder });
 
-    // Set column widths (adjust as needed)
+    // Set column widths
     const colWidths = headerOrder.map((header) => {
        if (header === "ID_questionnaire") return { wch: 20 };
-       if ([ "Q2_COMMUNE", "COMMUNE_LIBRE", "Q6", "Q6_COMMUNE", "Q6_COMMUNE_LIBRE"].includes(header)) return { wch: 30 };
-       if (header.endsWith("_precision")) return { wch: 25 };
-       if ([ "CODE_INSEE", "Q6_CODE_INSEE"].includes(header)) return { wch: 12 };
       return { wch: 15 }; // Default width
     });
     worksheet["!cols"] = colWidths;
 
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Survey Data");
+    const sheetName = showOnlyToday.value ? "Survey Data Today" : "Survey Data All";
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
 
-    // Use a timestamp in the filename to avoid overwriting
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    XLSX.writeFile(workbook, `CaenFlash_Survey_Data_${timestamp}.xlsx`);
+    // Adjust filename based on filter
+    const timestamp = new Date().toTimeString().split(' ')[0].replace(/:/g, "-"); // HH-MM-SS
+    let filenameBase = "CaenFlash_Survey_Data";
+    if (showOnlyToday.value) {
+        const todayString = getTodayDateString();
+        filenameBase += `_${todayString}`;
+    }
+    filenameBase += `_All_${timestamp}`;
+    if (!showOnlyToday.value) {
+       filenameBase = `CaenFlash_Survey_Data_All_${timestamp}.xlsx`;
+    }
+    else{
+        filenameBase = `CaenFlash_Survey_Data_${getTodayDateString()}_${timestamp}.xlsx`;
+    }
 
-    console.log("File downloaded successfully");
+    XLSX.writeFile(workbook, filenameBase);
+
+    console.log(`File downloaded successfully with ${showOnlyToday.value ? 'today\'s' : 'all'} data`);
   } catch (error) {
     console.error("Error downloading data:", error);
+    alert(`Erreur lors du téléchargement des données: ${error.message}`);
   }
 };
 
@@ -430,6 +490,32 @@ onMounted(() => {
 
 .btn-download:hover {
   background-color: #2563eb;
+}
+
+.btn-toggle {
+  background-color: #f39c12; /* Orange color */
+  color: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-bottom: 15px; /* Add some space below the button */
+  display: block; /* Make it block to center */
+  margin-left: auto;
+  margin-right: auto;
+  width: fit-content; /* Adjust width */
+  transition: background-color 0.3s;
+}
+
+.btn-toggle:hover {
+  background-color: #e67e22;
+}
+
+/* Add labels to dashboard cards */
+.dashboard-card h3 {
+  /* Adjust existing styles if needed, maybe add more margin-bottom */
+  margin-bottom: 10px;
 }
 
 @media (max-width: 600px) {
